@@ -1,6 +1,6 @@
 # Zane-HTTPParser
 
-A minimal, safe, hand-written HTTP/1.1 request parser for C++.
+A minimal, safe, hand-written HTTP protocol family library for C++. Supports HTTP/1.1, HTTP/2, and HTTP/3 framing.
 
 ## Why not llhttp?
 
@@ -10,44 +10,31 @@ Zane-HTTPParser is written by hand in plain C++. Every byte of the parser is exp
 
 ## Features
 
+### HTTP/1.1 (`http_parser.hpp`)
 - **State-machine design**: clear, predictable parsing phases (method → URL → headers → body)
 - **Bounds-checked**: all reads verify against the input buffer length
-- **No dynamic allocation during parsing** (headers stored in caller-provided map)
 - **Content-Length support**: body collected when `Content-Length` header is present
 - **Case-insensitive header normalization**: field names stored in lowercase
 - **Zero external dependencies**: only the C++ standard library
 
-## Usage
+### HTTP/2 (`http2.hpp`)
+- **Binary frame layer**: frame header (9-byte) parsing and construction for all frame types
+- **HPACK**: full Huffman-coded header compression (RFC 7541), static + dynamic table
+- **Connection management**: preface exchange, stream tracking, SETTINGS negotiation
+- **Build helpers**: `buildSettings`, `buildGoaway`, `buildResponse` (HEADERS + DATA)
 
-```cpp
-#include <http_parser.hpp>
-#include <cstdio>
-
-int main() {
-    const char* raw = "GET /hello HTTP/1.1\r\nHost: example.com\r\n\r\n";
-    size_t len = std::strlen(raw);
-
-    zane::http::Parser parser;
-    parser.execute(raw, len);
-
-    if (parser.hasError()) {
-        std::fprintf(stderr, "Parse error: %s\n", parser.errorMessage().c_str());
-        return 1;
-    }
-
-    if (parser.isComplete()) {
-        const auto& req = parser.result();
-        std::printf("Method: %s\n", req.m_method.c_str());
-        std::printf("URL:    %s\n", req.m_url.c_str());
-    }
-
-    return 0;
-}
-```
+### HTTP/3 (`http3.hpp`)
+- **QUIC varint encoding**: variable-length integer encode/decode (RFC 9000)
+- **HTTP/3 frame layer**: frame type and length decoding, payload extraction
+- **QPACK**: header compression adapted for QUIC (RFC 9204), encoder/decoder streams
+- **Connection management**: control stream, SETTINGS, GOAWAY, stream type detection
+- **QUIC transport abstraction**: `QUICTransport` interface for attaching any QUIC backend
 
 ## API
 
-### `zane::http::Request`
+### HTTP/1.1 — `zane::http`
+
+#### `zane::http::Request`
 
 | Field | Type | Description |
 |-------|------|-------------|
@@ -57,7 +44,7 @@ int main() {
 | `m_headers` | `std::map<std::string, std::string>` | Lowercased header fields |
 | `m_body` | `std::vector<uint8_t>` | Request body bytes |
 
-### `zane::http::Parser`
+#### `zane::http::Parser`
 
 | Method | Returns | Description |
 |--------|---------|-------------|
@@ -68,17 +55,90 @@ int main() {
 | `result()` | `const Request&` | Parsed request (valid only when `isComplete()`) |
 | `reset()` | `void` | Re-initialize for a new request |
 
-### `zane::http::buildResponse()`
+#### `zane::http::buildResponse()`
 
 ```cpp
-std::string buildResponse(int32_t status,
-                          const std::string& status_text,
+std::string buildResponse(int32_t status, const std::string& status_text,
                           const std::map<std::string, std::string>& headers,
-                          const uint8_t* body,
-                          size_t body_len);
+                          const uint8_t* body, size_t body_len);
 ```
 
 Builds a raw HTTP/1.1 response string. Auto-adds `Content-Length` if neither it nor `Transfer-Encoding` is present.
+
+### HTTP/2 — `zane::http2`
+
+#### Frame Types (`zane::http2::FrameType`)
+
+`DATA`, `HEADERS`, `PRIORITY`, `RST_STREAM`, `SETTINGS`, `PUSH_PROMISE`, `PING`, `GOAWAY`, `WINDOW_UPDATE`, `CONTINUATION`
+
+#### `zane::http2::Connection`
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `feed(data, size, on_frame, on_error)` | `int32_t` | Feed raw bytes, process preface + frames |
+| `buildSettings(settings_map)` | `vector<uint8_t>` | Build a SETTINGS frame |
+| `buildGoaway(last_stream_id, error)` | `vector<uint8_t>` | Build a GOAWAY frame |
+| `buildResponse(stream_id, headers, body, end_stream)` | `vector<uint8_t>` | Build HEADERS + DATA frames |
+| `reset()` | `void` | Reset to initial state |
+| `prefaceReceived()` | `bool` | True after client preface is received |
+| `clientPreface()` | `const uint8_t*` | Client connection preface bytes |
+| `clientPrefaceLen()` | `size_t` | Length of client preface |
+
+#### `zane::http2::HPACK`
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `encode(headers)` | `vector<uint8_t>` | Encode headers into HPACK binary |
+| `decode(data, size, out)` | `int32_t` | Decode HPACK binary into header pairs |
+| `setMaxTableSize(size)` | `void` | Update dynamic table capacity from SETTINGS |
+| `maxTableSize()` | `uint32_t` | Current max table size |
+| `reset()` | `void` | Clear dynamic table |
+
+### HTTP/3 — `zane::http3`
+
+#### Frame Types (`zane::http3::FrameType`)
+
+`DATA`, `HEADERS`, `CANCEL_PUSH`, `SETTINGS`, `PUSH_PROMISE`, `GOAWAY`, `MAX_PUSH_ID`, `DUPLICATE_PUSH`
+
+#### `zane::http3::Connection`
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `init()` | `void` | Initialize, send SETTINGS on control stream |
+| `feedStream(stream_id, data, size, fin, on_frame, on_error)` | `int32_t` | Feed data on a QUIC stream |
+| `buildResponse(stream_id, headers, body, fin)` | `vector<uint8_t>` | Build HEADERS + DATA for a stream |
+| `buildSettings(settings_map)` | `vector<uint8_t>` | Build a SETTINGS frame |
+| `buildGoaway(last_stream_id)` | `vector<uint8_t>` | Build a GOAWAY frame |
+| `reset()` | `void` | Reset to initial state |
+| `initialized()` | `bool` | True after `init()` completes |
+
+#### `zane::http3::QPACK`
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `encode(headers)` | `vector<uint8_t>` | Encode headers into QPACK binary |
+| `decode(data, size, out)` | `int32_t` | Decode QPACK binary into header pairs |
+| `feedEncoderStream(data, size)` | `int32_t` | Process encoder stream instructions |
+| `buildDecoderStream(increment)` | `vector<uint8_t>` | Generate decoder stream instruction |
+| `setMaxTableCapacity(cap)` | `void` | Set max table capacity from SETTINGS |
+| `reset()` | `void` | Clear dynamic table |
+
+#### `zane::http3::QUICTransport` (abstract)
+
+| Method | Description |
+|--------|-------------|
+| `sendStreamData(stream_id, data, size, fin)` | Send data on a given stream |
+| `sendControlData(data, size)` | Send data on the control stream |
+| `closeWithError(error_code, reason)` | Close connection with error |
+| `isConnected()` | Returns true if still active |
+
+## File Structure
+
+| File | Protocol |
+|------|----------|
+| `http_parser.hpp/.cpp` | HTTP/1.1 request parser |
+| `http2.hpp/.cpp` | HTTP/2 framing, HPACK, connection |
+| `http3.hpp/.cpp` | HTTP/3 framing, QPACK, connection |
 
 ## License
 
