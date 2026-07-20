@@ -2,10 +2,20 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstdlib>
 
 namespace zane {
 namespace http {
+
+// Defense-in-depth limits to prevent parser abuse:
+//   * kMaxBodySize  - caps an advertised Content-Length so a peer cannot claim a
+//                     huge body (avoids int32 overflow / preallocation abuse).
+//   * kMaxHeaders   - caps the number of unique headers per request to bound
+//                     memory and CPU (a single flooded request could otherwise
+//                     exhaust memory via std::map growth).
+static constexpr int64_t kMaxBodySize = static_cast<int64_t>(64) * 1024 * 1024; // 64 MB
+static constexpr size_t kMaxHeaders = 100;
 
 Parser::Parser() { reset(); }
 
@@ -75,10 +85,18 @@ int32_t Parser::execute(const char* p_data, size_t len) {
                 auto it = m_request.m_headers.find("content-length");
                 if (it != m_request.m_headers.end()) {
                     m_has_content_length = true;
-                    m_remaining_body = std::atoi(it->second.c_str());
-                    if (m_remaining_body < 0) {
-                        return setError("Negative Content-Length"), -1;
+                    // strtoll gives well-defined behavior on overflow (vs. atoi,
+                    // whose contract ends at INT_MAX). Reject empty values,
+                    // leading junk, negative values, and absurd sizes.
+                    const std::string& cl = it->second;
+                    char* end_ptr = nullptr;
+                    errno = 0;
+                    long long body_len = std::strtoll(cl.c_str(), &end_ptr, 10);
+                    if (end_ptr == cl.c_str() || end_ptr != cl.c_str() + cl.size() ||
+                        body_len < 0 || body_len > kMaxBodySize || errno == ERANGE) {
+                        return setError("Invalid or too large Content-Length"), -1;
                     }
+                    m_remaining_body = static_cast<int32_t>(body_len);
                 }
                 break;
             }
@@ -191,6 +209,11 @@ int32_t Parser::parseHeaderLine(const char* p_start, const char* p_end) {
         it->second += ", ";
         it->second += val;
     } else {
+        // Cap the number of unique headers to bound memory/CPU. Appending to an
+        // existing header (above) is allowed since it doesn't grow the map.
+        if (m_request.m_headers.size() >= kMaxHeaders) {
+            return setError("Too many headers"), -1;
+        }
         m_request.m_headers[field_name] = std::move(val);
     }
 

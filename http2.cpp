@@ -113,15 +113,21 @@ static void buildHuffmanTree(HuffmanDecodeNode* p_nodes, int& node_count) {
     }
 }
 
+// Lazily-initialized Huffman decode tree. As a function-local static with a
+// non-trivial constructor, it benefits from the C++11 "magic statics" guarantee:
+// the constructor runs exactly once, thread-safely, with proper
+// synchronization/happens-before for all subsequent readers. This replaces a
+// previous manual double-checked-locking pattern on a plain bool flag, which
+// was a data race (UB) when two threads reached first-call concurrently.
+struct HuffmanTree {
+    HuffmanDecodeNode nodes[4096];
+    int node_count = 0;
+    HuffmanTree() { buildHuffmanTree(nodes, node_count); }
+};
+
 static const HuffmanDecodeNode* getHuffmanTree() {
-    static HuffmanDecodeNode s_nodes[4096];
-    static int s_node_count = 0;
-    static bool s_initialized = false;
-    if (!s_initialized) {
-        buildHuffmanTree(s_nodes, s_node_count);
-        s_initialized = true;
-    }
-    return s_nodes;
+    static HuffmanTree s_tree;
+    return s_tree.nodes;
 }
 
 // ============================================================================
