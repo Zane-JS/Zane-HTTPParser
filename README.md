@@ -1,6 +1,6 @@
 # Zane-HTTPParser
 
-A minimal, safe, hand-written HTTP protocol family library for C++. Supports HTTP/1.1, HTTP/2, and HTTP/3 framing.
+A minimal, safe, hand-written HTTP protocol family library for C++23. Supports HTTP/1.1, HTTP/2, and HTTP/3 framing.
 
 ## Why not llhttp?
 
@@ -15,7 +15,7 @@ Zane-HTTPParser is written by hand in plain C++. Every byte of the parser is exp
 - **Bounds-checked**: all reads verify against the input buffer length
 - **Content-Length support**: body collected when `Content-Length` header is present
 - **Case-insensitive header normalization**: field names stored in lowercase
-- **Zero external dependencies**: only the C++ standard library
+- **Zero external dependencies**: only the C++23 standard library
 
 ### HTTP/2 (`http2.hpp`)
 - **Binary frame layer**: frame header (9-byte) parsing and construction for all frame types
