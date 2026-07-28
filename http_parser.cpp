@@ -14,8 +14,12 @@ namespace http {
 //   * kMaxHeaders   - caps the number of unique headers per request to bound
 //                     memory and CPU (a single flooded request could otherwise
 //                     exhaust memory via std::map growth).
+//   * kMaxUrlLength - caps the request-target length so a single request line
+//                     cannot blow up memory. 8 KB is generous for any
+//                     legitimate URL and well below the 64 MB body cap.
 static constexpr int64_t kMaxBodySize = static_cast<int64_t>(64) * 1024 * 1024; // 64 MB
 static constexpr size_t kMaxHeaders = 100;
+static constexpr size_t kMaxUrlLength = 8 * 1024; // 8 KB
 
 Parser::Parser() { reset(); }
 
@@ -81,6 +85,24 @@ int32_t Parser::execute(const char* p_data, size_t len) {
             if (p_line_start == p_line_trim || *p_line_start == '\r') {
                 m_state = ParseState::ST_BODY;
 
+                // Issue #10: HTTP request smuggling via Transfer-Encoding.
+                // The parser below only knows how to consume a body when
+                // Content-Length is set. If a client sends Transfer-Encoding:
+                // chunked, the body is silently dropped and the request is
+                // marked COMPLETE — which means a proxy in front of Zane
+                // could decode the chunked body and forward it, while Zane
+                // thinks the request ended early. That's a textbook
+                // smuggling gate.
+                //
+                // Until we have a real chunked decoder we reject any
+                // request that arrives with Transfer-Encoding, and also
+                // reject the RFC 7230 confusing case where both
+                // Content-Length and Transfer-Encoding are present.
+                auto te_it = m_request.m_headers.find("transfer-encoding");
+                if (te_it != m_request.m_headers.end()) {
+                    return setError("Transfer-Encoding not supported (chunked body not yet implemented)"), -1;
+                }
+
                 // Check Content-Length (headers are stored lowercase)
                 auto it = m_request.m_headers.find("content-length");
                 if (it != m_request.m_headers.end()) {
@@ -143,6 +165,29 @@ int32_t Parser::execute(const char* p_data, size_t len) {
 
 int32_t Parser::parseMethod(const char* p_start, const char* p_end) {
     size_t len = static_cast<size_t>(p_end - p_start);
+
+    // Issue #12: HTTP method whitelist. Accept only RFC 9110 §9 methods,
+    // and additionally reject any method that contains non-token chars
+    // (CR, LF, control bytes, separators) so a TRACE / XST / log-injection
+    // request is rejected with 400 instead of being parsed.
+    if (len == 0 || len > 32) {
+        return setError("Method too long or empty"), -1;
+    }
+
+    // RFC 9110 §5.6.2 token chars: !#$%&'*+-.^_` + alnum. We reject anything
+    // outside that set rather than try to coerce it.
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char c = static_cast<unsigned char>(p_start[i]);
+        bool is_token = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+                        (c >= 'a' && c <= 'z') || c == '!' || c == '#' ||
+                        c == '$' || c == '%' || c == '&' || c == '\'' ||
+                        c == '*' || c == '+' || c == '-' || c == '.' ||
+                        c == '^' || c == '_' || c == '`';
+        if (!is_token) {
+            return setError("Invalid method character"), -1;
+        }
+    }
+
     if (len == 3 && std::memcmp(p_start, "GET", 3) == 0) {
         m_request.m_method = "GET";
     } else if (len == 4 && std::memcmp(p_start, "POST", 4) == 0) {
@@ -158,12 +203,18 @@ int32_t Parser::parseMethod(const char* p_start, const char* p_end) {
     } else if (len == 5 && std::memcmp(p_start, "PATCH", 5) == 0) {
         m_request.m_method = "PATCH";
     } else {
-        m_request.m_method.assign(p_start, len);
+        // Known-good method per RFC 9110 §9 but not on the supported list
+        // (CONNECT, TRACE, custom verbs). Refuse rather than accept.
+        return setError("Method not supported"), -1;
     }
     return 0;
 }
 
 int32_t Parser::parseUrl(const char* p_start, const char* p_end) {
+    size_t len = static_cast<size_t>(p_end - p_start);
+    if (len > kMaxUrlLength) {
+        return setError("URL too long"), -1;
+    }
     m_request.m_url.assign(p_start, p_end);
     return 0;
 }
