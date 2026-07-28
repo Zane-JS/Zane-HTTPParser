@@ -161,6 +161,29 @@ int32_t Parser::execute(const char* p_data, size_t len) {
 
 int32_t Parser::parseMethod(const char* p_start, const char* p_end) {
     size_t len = static_cast<size_t>(p_end - p_start);
+
+    // Issue #12: HTTP method whitelist. Accept only RFC 9110 §9 methods,
+    // and additionally reject any method that contains non-token chars
+    // (CR, LF, control bytes, separators) so a TRACE / XST / log-injection
+    // request is rejected with 400 instead of being parsed.
+    if (len == 0 || len > 32) {
+        return setError("Method too long or empty"), -1;
+    }
+
+    // RFC 9110 §5.6.2 token chars: !#$%&'*+-.^_` + alnum. We reject anything
+    // outside that set rather than try to coerce it.
+    for (size_t i = 0; i < len; ++i) {
+        unsigned char c = static_cast<unsigned char>(p_start[i]);
+        bool is_token = (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') ||
+                        (c >= 'a' && c <= 'z') || c == '!' || c == '#' ||
+                        c == '$' || c == '%' || c == '&' || c == '\'' ||
+                        c == '*' || c == '+' || c == '-' || c == '.' ||
+                        c == '^' || c == '_' || c == '`';
+        if (!is_token) {
+            return setError("Invalid method character"), -1;
+        }
+    }
+
     if (len == 3 && std::memcmp(p_start, "GET", 3) == 0) {
         m_request.m_method = "GET";
     } else if (len == 4 && std::memcmp(p_start, "POST", 4) == 0) {
@@ -176,7 +199,9 @@ int32_t Parser::parseMethod(const char* p_start, const char* p_end) {
     } else if (len == 5 && std::memcmp(p_start, "PATCH", 5) == 0) {
         m_request.m_method = "PATCH";
     } else {
-        m_request.m_method.assign(p_start, len);
+        // Known-good method per RFC 9110 §9 but not on the supported list
+        // (CONNECT, TRACE, custom verbs). Refuse rather than accept.
+        return setError("Method not supported"), -1;
     }
     return 0;
 }
