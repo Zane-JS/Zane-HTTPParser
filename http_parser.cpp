@@ -81,6 +81,24 @@ int32_t Parser::execute(const char* p_data, size_t len) {
             if (p_line_start == p_line_trim || *p_line_start == '\r') {
                 m_state = ParseState::ST_BODY;
 
+                // Issue #10: HTTP request smuggling via Transfer-Encoding.
+                // The parser below only knows how to consume a body when
+                // Content-Length is set. If a client sends Transfer-Encoding:
+                // chunked, the body is silently dropped and the request is
+                // marked COMPLETE — which means a proxy in front of Zane
+                // could decode the chunked body and forward it, while Zane
+                // thinks the request ended early. That's a textbook
+                // smuggling gate.
+                //
+                // Until we have a real chunked decoder we reject any
+                // request that arrives with Transfer-Encoding, and also
+                // reject the RFC 7230 confusing case where both
+                // Content-Length and Transfer-Encoding are present.
+                auto te_it = m_request.m_headers.find("transfer-encoding");
+                if (te_it != m_request.m_headers.end()) {
+                    return setError("Transfer-Encoding not supported (chunked body not yet implemented)"), -1;
+                }
+
                 // Check Content-Length (headers are stored lowercase)
                 auto it = m_request.m_headers.find("content-length");
                 if (it != m_request.m_headers.end()) {
