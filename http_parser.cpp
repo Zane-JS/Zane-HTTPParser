@@ -14,8 +14,12 @@ namespace http {
 //   * kMaxHeaders   - caps the number of unique headers per request to bound
 //                     memory and CPU (a single flooded request could otherwise
 //                     exhaust memory via std::map growth).
+//   * kMaxUrlLength - caps the request-target length so a single request line
+//                     cannot blow up memory. 8 KB is generous for any
+//                     legitimate URL and well below the 64 MB body cap.
 static constexpr int64_t kMaxBodySize = static_cast<int64_t>(64) * 1024 * 1024; // 64 MB
 static constexpr size_t kMaxHeaders = 100;
+static constexpr size_t kMaxUrlLength = 8 * 1024; // 8 KB
 
 Parser::Parser() { reset(); }
 
@@ -207,6 +211,10 @@ int32_t Parser::parseMethod(const char* p_start, const char* p_end) {
 }
 
 int32_t Parser::parseUrl(const char* p_start, const char* p_end) {
+    size_t len = static_cast<size_t>(p_end - p_start);
+    if (len > kMaxUrlLength) {
+        return setError("URL too long"), -1;
+    }
     m_request.m_url.assign(p_start, p_end);
     return 0;
 }
