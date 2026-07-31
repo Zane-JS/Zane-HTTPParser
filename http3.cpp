@@ -206,8 +206,8 @@ std::vector<uint8_t> FrameWriter::buildFrame(FrameType type,
 // ============================================================================
 
 struct StaticEntry {
-    const char* m_name;
-    const char* m_value;
+    const char* p_name;
+    const char* p_value;
     bool m_has_value;
 };
 
@@ -370,21 +370,21 @@ static const uint8_t kHuffBits[256] = {
     14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,14,
 };
 
-static void buildHuffmanTree(HuffNode* p_nodes, int& node_count) {
+static void buildHuffmanTree(HuffNode* p_nodes, int32_t& node_count) {
     p_nodes[0].m_next[0] = -1;
     p_nodes[0].m_next[1] = -1;
     p_nodes[0].m_is_leaf = false;
     node_count = 1;
 
-    for (int sym = 0; sym < 256; ++sym) {
+    for (int32_t sym = 0; sym < 256; ++sym) {
         uint32_t code = kHuffCode[sym];
-        int bits = kHuffBits[sym];
-        int idx = 0;
-        for (int b = bits - 1; b >= 0; --b) {
-            int bit = static_cast<int>((code >> b) & 1);
+        int32_t bits = kHuffBits[sym];
+        int32_t idx = 0;
+        for (int32_t b = bits - 1; b >= 0; --b) {
+            int32_t bit = static_cast<int32_t>((code >> b) & 1);
             if (p_nodes[idx].m_next[bit] == -1) {
                 p_nodes[idx].m_next[bit] = static_cast<int16_t>(node_count);
-                int new_idx = node_count++;
+                int32_t new_idx = node_count++;
                 p_nodes[new_idx].m_next[0] = -1;
                 p_nodes[new_idx].m_next[1] = -1;
                 p_nodes[new_idx].m_is_leaf = false;
@@ -398,7 +398,7 @@ static void buildHuffmanTree(HuffNode* p_nodes, int& node_count) {
 
 static const HuffNode* getHuffmanTree() {
     static HuffNode s_nodes[4096];
-    static int s_node_count = 0;
+    static int32_t s_node_count = 0;
     static bool s_init = false;
     if (!s_init) {
         buildHuffmanTree(s_nodes, s_node_count);
@@ -424,7 +424,7 @@ static int32_t qpackDecodeString(const uint8_t* p_data, size_t size,
         out.clear();
         out.reserve(static_cast<size_t>(str_len));
         uint32_t bits_buf = 0;
-        int bits_in_buf = 0;
+        int32_t bits_in_buf = 0;
         const uint8_t* p_end = p_str + str_len;
         const uint8_t* p_src = p_str;
 
@@ -433,13 +433,13 @@ static int32_t qpackDecodeString(const uint8_t* p_data, size_t size,
                 bits_buf = (bits_buf << 8) | *p_src++;
                 bits_in_buf += 8;
             }
-            int node_idx = 0;
-            int bits_used = 0;
+            int32_t node_idx = 0;
+            int32_t bits_used = 0;
             while (bits_in_buf > 0) {
-                int bit = static_cast<int>((bits_buf >> (bits_in_buf - 1)) & 1);
+                int32_t bit = static_cast<int32_t>((bits_buf >> (bits_in_buf - 1)) & 1);
                 --bits_in_buf;
                 ++bits_used;
-                int next = p_tree[node_idx].m_next[bit];
+                int32_t next = p_tree[node_idx].m_next[bit];
                 if (next < 0) {
                     consumed = 0;
                     return -2;
@@ -482,14 +482,14 @@ bool QPACK::getStaticEntry(size_t index, std::string& name,
                             std::string& value) {
     if (index < 1 || index > 61) return false;
     const auto& e = kQPACKStaticTable[index - 1];
-    name = e.m_name;
-    value = e.m_has_value ? e.m_value : "";
+    name = e.p_name;
+    value = e.m_has_value ? e.p_value : "";
     return true;
 }
 
 uint32_t QPACK::findTableIndex(const std::string& name) const {
-    for (int i = 0; i < 61; ++i) {
-        if (name == kQPACKStaticTable[i].m_name) {
+    for (int32_t i = 0; i < 61; ++i) {
+        if (name == kQPACKStaticTable[i].p_name) {
             return static_cast<uint32_t>(i + 1);
         }
     }
@@ -503,9 +503,9 @@ uint32_t QPACK::findTableIndex(const std::string& name) const {
 
 int32_t QPACK::findTableEntry(const std::string& name,
                                const std::string& value) const {
-    for (int i = 0; i < 61; ++i) {
-        if (name == kQPACKStaticTable[i].m_name &&
-            kQPACKStaticTable[i].m_has_value && value == kQPACKStaticTable[i].m_value) {
+    for (int32_t i = 0; i < 61; ++i) {
+        if (name == kQPACKStaticTable[i].p_name &&
+            kQPACKStaticTable[i].m_has_value && value == kQPACKStaticTable[i].p_value) {
             return i + 1;
         }
     }
@@ -606,9 +606,9 @@ int32_t QPACK::feedEncoderStream(const uint8_t* p_data, size_t size) {
 
 std::vector<uint8_t> QPACK::buildDecoderStream(uint64_t increment) {
     std::vector<uint8_t> buf(8);
-    uint8_t* p = buf.data();
-    qpackEncodeInteger(p, increment, 7, 0x00); // Insert Count Increment
-    buf.resize(static_cast<size_t>(p - buf.data()));
+    uint8_t* p_out = buf.data();
+    qpackEncodeInteger(p_out, increment, 7, 0x00); // Insert Count Increment
+    buf.resize(static_cast<size_t>(p_out - buf.data()));
     return buf;
 }
 
@@ -774,7 +774,7 @@ int32_t QPACK::decode(const uint8_t* p_data, size_t size,
 // ============================================================================
 
 Connection::Connection(QUICTransport* p_transport)
-    : m_p_transport(p_transport) {
+    : p_transport(p_transport) {
     reset();
 }
 
@@ -788,7 +788,7 @@ void Connection::reset() {
 }
 
 void Connection::init() {
-    if (m_initialized || !m_p_transport) return;
+    if (m_initialized || !p_transport) return;
 
     // Send SETTINGS on the control stream (stream ID 2 = first client-initiated
     // unidirectional stream per QUIC stream mapping).
@@ -798,7 +798,7 @@ void Connection::init() {
         {SettingsId::QPACK_BLOCKED_STREAMS, 100},
         {SettingsId::MAX_FIELD_SECTION_SIZE, 65536},
     });
-    m_p_transport->sendControlData(settings.data(), settings.size());
+    p_transport->sendControlData(settings.data(), settings.size());
 
     m_initialized = true;
 }

@@ -111,10 +111,10 @@ int32_t Parser::execute(const char* p_data, size_t len) {
                     // whose contract ends at INT_MAX). Reject empty values,
                     // leading junk, negative values, and absurd sizes.
                     const std::string& cl = it->second;
-                    char* end_ptr = nullptr;
+                    char* p_end_ptr = nullptr;
                     errno = 0;
-                    long long body_len = std::strtoll(cl.c_str(), &end_ptr, 10);
-                    if (end_ptr == cl.c_str() || end_ptr != cl.c_str() + cl.size() ||
+                    int64_t body_len = std::strtoll(cl.c_str(), &p_end_ptr, 10);
+                    if (p_end_ptr == cl.c_str() || p_end_ptr != cl.c_str() + cl.size() ||
                         body_len < 0 || body_len > kMaxBodySize || errno == ERANGE) {
                         return setError("Invalid or too large Content-Length"), -1;
                     }

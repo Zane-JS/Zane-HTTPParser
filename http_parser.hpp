@@ -232,7 +232,7 @@ inline std::string buildChunk(const uint8_t* p_data, size_t len) {
     // Reserve: hex size (max 16 chars for size_t on 64-bit) + CRLF + data + CRLF.
     res.reserve(24 + len);
     char hex_buf[32];
-    int hex_len = snprintf(hex_buf, sizeof(hex_buf), "%zx", len);
+    int32_t hex_len = snprintf(hex_buf, sizeof(hex_buf), "%zx", len);
     res.append(hex_buf, hex_len);
     res += "\r\n";
     if (len > 0) {
