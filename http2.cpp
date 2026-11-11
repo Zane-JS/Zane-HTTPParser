@@ -135,8 +135,8 @@ static const HuffmanDecodeNode* getHuffmanTree() {
 // ============================================================================
 
 struct StaticEntry {
-    std::string m_name;
-    std::string m_value;
+    const char* p_name;
+    const char* p_value;
     bool m_has_value;
 };
 
@@ -366,8 +366,8 @@ void HPACK::evictToFit(uint32_t needed) {
 bool HPACK::getStaticEntry(size_t index, std::string& name, std::string& value) {
     if (index < 1 || index > 61) return false;
     const auto& e = kStaticTable[index - 1];
-    name = e.m_name;
-    value = e.m_has_value ? e.m_value : "";
+    name = e.p_name;
+    value = e.m_has_value ? e.p_value : "";
     return true;
 }
 
@@ -386,7 +386,7 @@ size_t HPACK::totalEntries() const {
 
 uint32_t HPACK::findTableIndex(const std::string& name) const {
     for (int32_t i = 0; i < 61; ++i) {
-        if (name == kStaticTable[i].m_name) {
+        if (name == kStaticTable[i].p_name) {
             return static_cast<uint32_t>(i + 1);
         }
     }
@@ -401,8 +401,8 @@ uint32_t HPACK::findTableIndex(const std::string& name) const {
 int32_t HPACK::findTableEntry(const std::string& name,
                                const std::string& value) const {
     for (int32_t i = 0; i < 61; ++i) {
-        if (name == kStaticTable[i].m_name &&
-            kStaticTable[i].m_has_value && value == kStaticTable[i].m_value) {
+        if (name == kStaticTable[i].p_name &&
+            kStaticTable[i].m_has_value && value == kStaticTable[i].p_value) {
             return i + 1;
         }
     }
