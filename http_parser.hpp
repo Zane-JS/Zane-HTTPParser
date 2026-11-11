@@ -126,6 +126,20 @@ inline std::string buildResponse(int32_t status, const std::string& status_text,
         res += "\r\n";
     }
 
+    // Issue #15 (item 2): auto-add defense-in-depth security headers that
+    // are sensible for almost any HTTP response. Apps can still override
+    // by passing them in the headers map. We don't randomly set a Server
+    // header (that would help fingerprinting more than anything).
+    if (headers.find("X-Content-Type-Options") == headers.end()) {
+        res += "X-Content-Type-Options: nosniff\r\n";
+    }
+    if (headers.find("Connection") == headers.end()) {
+        // Trantor's TcpServer closes after each request by default in the
+        // single-connection mode; setting Connection: close makes the
+        // client's behavior explicit and avoids keep-alive ambiguity.
+        res += "Connection: close\r\n";
+    }
+
     // Content-Length (auto-add if not present)
     if (headers.find("Content-Length") == headers.end() && headers.find("Transfer-Encoding") == headers.end()) {
         res += "Content-Length: ";
