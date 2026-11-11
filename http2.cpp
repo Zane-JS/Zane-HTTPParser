@@ -363,11 +363,17 @@ void HPACK::evictToFit(uint32_t needed) {
     }
 }
 
+/**
+ * @brief Copy a static HPACK entry at a one-based index (1 through 61).
+ *
+ * Sets name and value on success, using an empty value for name-only entries.
+ * @return true on success; false for an invalid index, leaving outputs unchanged.
+ */
 bool HPACK::getStaticEntry(size_t index, std::string& name, std::string& value) {
     if (index < 1 || index > 61) return false;
     const auto& e = kStaticTable[index - 1];
-    name = e.m_name;
-    value = e.m_has_value ? e.m_value : "";
+    name = e.p_name;
+    value = e.m_has_value ? e.p_value : "";
     return true;
 }
 
@@ -384,9 +390,13 @@ size_t HPACK::totalEntries() const {
     return 61 + m_dynamic_table.size();
 }
 
+/**
+ * @brief Find a header name, searching the static table before the dynamic table.
+ * @return The first matching one-based HPACK index, or 0 if no name matches.
+ */
 uint32_t HPACK::findTableIndex(const std::string& name) const {
     for (int32_t i = 0; i < 61; ++i) {
-        if (name == kStaticTable[i].m_name) {
+        if (name == kStaticTable[i].p_name) {
             return static_cast<uint32_t>(i + 1);
         }
     }
@@ -398,11 +408,16 @@ uint32_t HPACK::findTableIndex(const std::string& name) const {
     return 0;
 }
 
+/**
+ * @brief Find an exact header name/value pair, searching static entries with
+ * explicit values before dynamic entries.
+ * @return The first matching one-based HPACK index, or 0 if no pair matches.
+ */
 int32_t HPACK::findTableEntry(const std::string& name,
                                const std::string& value) const {
     for (int32_t i = 0; i < 61; ++i) {
-        if (name == kStaticTable[i].m_name &&
-            kStaticTable[i].m_has_value && value == kStaticTable[i].m_value) {
+        if (name == kStaticTable[i].p_name &&
+            kStaticTable[i].m_has_value && value == kStaticTable[i].p_value) {
             return i + 1;
         }
     }
@@ -711,7 +726,7 @@ int32_t Connection::feed(const uint8_t* p_data, size_t size,
     size_t pos = 0;
 
     if (!m_preface_received) {
-        if (size < kClientPrefaceLen) {
+        if (size < k_client_preface_len) {
             return 0;
         }
         if (std::memcmp(p_data, k_client_preface, k_client_preface_len) != 0) {
