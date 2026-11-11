@@ -86,22 +86,22 @@ struct HuffmanDecodeNode {
     bool m_is_leaf;
 };
 
-static void buildHuffmanTree(HuffmanDecodeNode* p_nodes, int& node_count) {
+static void buildHuffmanTree(HuffmanDecodeNode* p_nodes, int32_t& node_count) {
     p_nodes[0].m_next[0] = -1;
     p_nodes[0].m_next[1] = -1;
     p_nodes[0].m_is_leaf = false;
     node_count = 1;
 
-    for (int sym = 0; sym < 256; ++sym) {
+    for (int32_t sym = 0; sym < 256; ++sym) {
         uint32_t code = kHuffmanEncode[sym].m_code;
-        int bits = kHuffmanEncode[sym].m_bits;
-        int idx = 0;
+        int32_t bits = kHuffmanEncode[sym].m_bits;
+        int32_t idx = 0;
 
-        for (int b = bits - 1; b >= 0; --b) {
-            int bit = static_cast<int>((code >> b) & 1);
+        for (int32_t b = bits - 1; b >= 0; --b) {
+            int32_t bit = static_cast<int32_t>((code >> b) & 1);
             if (p_nodes[idx].m_next[bit] == -1) {
                 p_nodes[idx].m_next[bit] = static_cast<int16_t>(node_count);
-                int new_idx = node_count++;
+                int32_t new_idx = node_count++;
                 p_nodes[new_idx].m_next[0] = -1;
                 p_nodes[new_idx].m_next[1] = -1;
                 p_nodes[new_idx].m_is_leaf = false;
@@ -121,8 +121,8 @@ static void buildHuffmanTree(HuffmanDecodeNode* p_nodes, int& node_count) {
 // was a data race (UB) when two threads reached first-call concurrently.
 struct HuffmanTree {
     HuffmanDecodeNode nodes[4096];
-    int node_count = 0;
-    HuffmanTree() { buildHuffmanTree(nodes, node_count); }
+    int32_t m_node_count = 0;
+    HuffmanTree() { buildHuffmanTree(nodes, m_node_count); }
 };
 
 static const HuffmanDecodeNode* getHuffmanTree() {
@@ -135,8 +135,8 @@ static const HuffmanDecodeNode* getHuffmanTree() {
 // ============================================================================
 
 struct StaticEntry {
-    const char* m_name;
-    const char* m_value;
+    const char* p_name;
+    const char* p_value;
     bool m_has_value;
 };
 
@@ -291,7 +291,7 @@ static int32_t decodeString(const uint8_t* p_data, size_t size,
         out.reserve(str_len);
 
         uint32_t bits_buf = 0;
-        int bits_in_buf = 0;
+        int32_t bits_in_buf = 0;
         const uint8_t* p_end = p_str_start + str_len;
         const uint8_t* p_src = p_str_start;
 
@@ -300,15 +300,15 @@ static int32_t decodeString(const uint8_t* p_data, size_t size,
                 bits_buf = (bits_buf << 8) | *p_src++;
                 bits_in_buf += 8;
             }
-            int node_idx = 0;
+            int32_t node_idx = 0;
             bool found = false;
-            int bits_used = 0;
+            int32_t bits_used = 0;
             while (bits_in_buf > 0 && !found) {
-                int bit = static_cast<int>((bits_buf >> (bits_in_buf - 1)) & 1);
+                int32_t bit = static_cast<int32_t>((bits_buf >> (bits_in_buf - 1)) & 1);
                 --bits_in_buf;
                 ++bits_used;
 
-                int next = p_tree[node_idx].m_next[bit];
+                int32_t next = p_tree[node_idx].m_next[bit];
                 if (next < 0) {
                     // Invalid Huffman sequence
                     consumed = 0;
@@ -385,7 +385,7 @@ size_t HPACK::totalEntries() const {
 }
 
 uint32_t HPACK::findTableIndex(const std::string& name) const {
-    for (int i = 0; i < 61; ++i) {
+    for (int32_t i = 0; i < 61; ++i) {
         if (name == kStaticTable[i].m_name) {
             return static_cast<uint32_t>(i + 1);
         }
@@ -400,7 +400,7 @@ uint32_t HPACK::findTableIndex(const std::string& name) const {
 
 int32_t HPACK::findTableEntry(const std::string& name,
                                const std::string& value) const {
-    for (int i = 0; i < 61; ++i) {
+    for (int32_t i = 0; i < 61; ++i) {
         if (name == kStaticTable[i].m_name &&
             kStaticTable[i].m_has_value && value == kStaticTable[i].m_value) {
             return i + 1;
@@ -670,17 +670,17 @@ int32_t FrameReader::readFrame(const uint8_t* p_data, size_t size,
 // Connection — Preface
 // ============================================================================
 
-static const uint8_t kClientPreface[] =
+static const uint8_t k_client_preface[] =
     "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
-static const size_t kClientPrefaceLen = 24;
+static const size_t k_client_preface_len = 24;
 
 const uint8_t* Connection::clientPreface() {
-    return kClientPreface;
+    return k_client_preface;
 }
 
 size_t Connection::clientPrefaceLen() {
-    return kClientPrefaceLen;
+    return k_client_preface_len;
 }
 
 // ============================================================================
@@ -714,12 +714,12 @@ int32_t Connection::feed(const uint8_t* p_data, size_t size,
         if (size < kClientPrefaceLen) {
             return 0;
         }
-        if (std::memcmp(p_data, kClientPreface, kClientPrefaceLen) != 0) {
+        if (std::memcmp(p_data, k_client_preface, k_client_preface_len) != 0) {
             if (on_error) on_error(ErrorCode::PROTOCOL_ERROR);
             return -1;
         }
         m_preface_received = true;
-        pos = kClientPrefaceLen;
+        pos = k_client_preface_len;
     }
 
     while (pos < size) {

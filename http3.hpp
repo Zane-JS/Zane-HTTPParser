@@ -271,7 +271,7 @@ public:
     bool initialized() const { return m_initialized; }
 
 private:
-    QUICTransport* m_p_transport;
+    QUICTransport* p_transport;
     bool m_initialized = false;
 
     uint64_t m_max_field_section_size = 0;
