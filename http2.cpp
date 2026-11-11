@@ -363,6 +363,12 @@ void HPACK::evictToFit(uint32_t needed) {
     }
 }
 
+/**
+ * @brief Copy a static HPACK entry at a one-based index (1 through 61).
+ *
+ * Sets name and value on success, using an empty value for name-only entries.
+ * @return true on success; false for an invalid index, leaving outputs unchanged.
+ */
 bool HPACK::getStaticEntry(size_t index, std::string& name, std::string& value) {
     if (index < 1 || index > 61) return false;
     const auto& e = kStaticTable[index - 1];
@@ -384,6 +390,10 @@ size_t HPACK::totalEntries() const {
     return 61 + m_dynamic_table.size();
 }
 
+/**
+ * @brief Find a header name, searching the static table before the dynamic table.
+ * @return The first matching one-based HPACK index, or 0 if no name matches.
+ */
 uint32_t HPACK::findTableIndex(const std::string& name) const {
     for (int32_t i = 0; i < 61; ++i) {
         if (name == kStaticTable[i].p_name) {
@@ -398,6 +408,11 @@ uint32_t HPACK::findTableIndex(const std::string& name) const {
     return 0;
 }
 
+/**
+ * @brief Find an exact header name/value pair, searching static entries with
+ * explicit values before dynamic entries.
+ * @return The first matching one-based HPACK index, or 0 if no pair matches.
+ */
 int32_t HPACK::findTableEntry(const std::string& name,
                                const std::string& value) const {
     for (int32_t i = 0; i < 61; ++i) {
