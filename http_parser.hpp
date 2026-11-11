@@ -85,6 +85,20 @@ class Parser {
 // HTTP Response Builder (helper)
 // ============================================================================
 
+// Strip CR/LF/NUL from a header field so it cannot split a header line or
+// smuggle a second response, even if an upstream caller bypassed validation.
+// Defense-in-depth at the serializer level.
+inline std::string sanitizeHeaderValue(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        if (c != '\r' && c != '\n' && c != '\0') {
+            out.push_back(c);
+        }
+    }
+    return out;
+}
+
 inline std::string buildResponse(int32_t status, const std::string& status_text,
                                   const std::map<std::string, std::string>& headers,
                                   const uint8_t* p_body, size_t body_len) {
@@ -95,14 +109,20 @@ inline std::string buildResponse(int32_t status, const std::string& status_text,
     res += "HTTP/1.1 ";
     res += std::to_string(status);
     res += ' ';
-    res += status_text;
+    res += sanitizeHeaderValue(status_text);
     res += "\r\n";
 
     // Headers
     for (const auto& [key, val] : headers) {
+        // Skip headers whose name is empty or contains line terminators — they
+        // cannot form a valid header line and would corrupt the wire format.
+        if (key.empty() || key.find('\r') != std::string::npos ||
+            key.find('\n') != std::string::npos || key.find('\0') != std::string::npos) {
+            continue;
+        }
         res += key;
         res += ": ";
-        res += val;
+        res += sanitizeHeaderValue(val);
         res += "\r\n";
     }
 
