@@ -135,8 +135,8 @@ static const HuffmanDecodeNode* getHuffmanTree() {
 // ============================================================================
 
 struct StaticEntry {
-    const char* p_name;
-    const char* p_value;
+    std::string m_name;
+    std::string m_value;
     bool m_has_value;
 };
 
@@ -711,7 +711,7 @@ int32_t Connection::feed(const uint8_t* p_data, size_t size,
     size_t pos = 0;
 
     if (!m_preface_received) {
-        if (size < kClientPrefaceLen) {
+        if (size < k_client_preface_len) {
             return 0;
         }
         if (std::memcmp(p_data, k_client_preface, k_client_preface_len) != 0) {
